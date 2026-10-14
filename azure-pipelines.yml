@@ -1,0 +1,61 @@
+trigger:
+  branches:
+    include:
+    - master
+pool:
+  vmImage: 'windows-latest'
+variables:
+- name: buildConfiguration
+  value: 'Release'
+stages:
+- stage: Build
+  displayName: "Build and Publish"
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: DotNetCoreCLI@2
+      displayName: "Restore"
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+    - task: DotNetCoreCLI@2
+      displayName: "Build"
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration)'
+    - task: DotNetCoreCLI@2
+      displayName: "Publish"
+      inputs:
+        command: 'publish'
+        publishWebProjects: true
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+        zipAfterPublish: true
+    - task: ecdc45f6-832d-4ad9-b52b-ee49e94659be@1
+      inputs:
+        path: $(Build.ArtifactStagingDirectory)
+        artifactName: drop
+- stage: Deploy_Prod
+  displayName: "Deploy to Azure App Service"
+  dependsOn:
+  - Build
+  jobs:
+  - deployment: DeployToAzure
+    environment:
+      name: 'prod'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+            inputs:
+              alias: current
+              artifact: drop
+          - task: AzureWebApp@1
+            displayName: "Deploy to App Service"
+            inputs:
+              azureSubscription: 'logic-house-connection'
+              appName: 'aecslogichouseapp'
+              appType: 'webApp'
+              package: '$(Pipeline.Workspace)/drop/**/*.zip'
+
